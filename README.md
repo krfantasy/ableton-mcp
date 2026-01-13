@@ -1,7 +1,7 @@
 # AbletonMCP - Ableton Live Model Context Protocol Integration
 
-AbletonMCP connects Ableton Live to Claude AI through the Model Context Protocol (MCP), allowing Cursor/Claude to directly interact with and control Ableton Live. 
-The goal of this (forked) integration is to comprehensively support the [Ableton Live Object Model](https://docs.cycling74.com/apiref/lom/). 
+AbletonMCP connects Ableton Live to Claude AI through the Model Context Protocol (MCP), allowing Cursor/Claude to directly interact with and control Ableton Live.
+The goal of this (forked) integration is to comprehensively support the [Ableton Live Object Model](https://docs.cycling74.com/apiref/lom/).
 
 ## Features
 
@@ -91,10 +91,10 @@ uvx ableton-mcp
      `Contents/App-Resources/MIDI Remote Scripts/`
    - Method 2: If it's not there in the first method, use the direct path (replace XX with your version number):
      `/Users/[Username]/Library/Preferences/Ableton/Live XX/User Remote Scripts`
-   
+
    **For Windows:**
    - Method 1:
-     C:\Users\[Username]\AppData\Roaming\Ableton\Live x.x.x\Preferences\User Remote Scripts 
+     C:\Users\[Username]\AppData\Roaming\Ableton\Live x.x.x\Preferences\User Remote Scripts
    - Method 2:
      `C:\ProgramData\Ableton\Live XX\Resources\MIDI Remote Scripts\`
    - Method 3:
@@ -178,6 +178,8 @@ uvx pytest -q tests/test_integration_song_creation.py
   - **Example**: "Get the session info."
 - `set_tempo(tempo: float)`: Set the tempo of the Ableton session.
   - **Example**: "Set the tempo to 120 BPM."
+- `set_signature_denominator(denom: int)` and `set_signature_numerator(numer: int)`: set the time signature of the song.
+  - **Example**: "Set time signature to 7/8"
 - `start_playback()`: Start playing the Ableton session.
   - **Example**: "Start playback."
 - `stop_playback()`: Stop playing the Ableton session.
@@ -319,7 +321,7 @@ uvx pytest -q tests/test_integration_song_creation.py
 - `get_application_document()`: Get a brief summary of the current Live Set via `Application.get_document()`.
   - Example: "Summarize the current set (track/scene counts)."
 - `list_control_surfaces()`: List configured control surfaces.
-  
+
 #### Application.View
 Following the LOM `Application.View` API, the MCP exposes properties and functions to control and query Live's UI. See official docs: [Application.View](https://docs.cycling74.com/apiref/lom/application_view/).
 
@@ -351,7 +353,7 @@ Following the LOM `Application.View` API, the MCP exposes properties and functio
 - `show_message(message: str)`: Display a message in Ableton's status bar.
   - **Example**: "Show the message 'Hello from the AI!' in Ableton."
 
- 
+
 
 ## Troubleshooting
 
@@ -362,6 +364,10 @@ Following the LOM `Application.View` API, the MCP exposes properties and functio
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+## References
+- [Unofficial Live API documentation](https://structure-void.com/ableton-live-midi-remote-scripts/)
+- [Live 12.0.1 MIDI Remote Python Scripts Sources uncompiled](https://github.com/gluon/AbletonLive12_MIDIRemoteScripts/tree/main)
 
 ## Disclaimer
 

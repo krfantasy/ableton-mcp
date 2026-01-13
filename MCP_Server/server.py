@@ -9,7 +9,7 @@ from typing import AsyncIterator, Dict, Any, List, Union
 from .m4l_utils import set_parameter_default_value
 
 # Configure logging
-logging.basicConfig(level=logging.INFO, 
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger("AbletonMCPServer")
 
@@ -18,12 +18,12 @@ class AbletonConnection:
     host: str
     port: int
     sock: socket.socket = None
-    
+
     def connect(self) -> bool:
         """Connect to the Ableton Remote Script socket server"""
         if self.sock:
             return True
-            
+
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.sock.connect((self.host, self.port))
@@ -33,7 +33,7 @@ class AbletonConnection:
             logger.error(f"Failed to connect to Ableton: {str(e)}")
             self.sock = None
             return False
-    
+
     def disconnect(self):
         """Disconnect from the Ableton Remote Script"""
         if self.sock:
@@ -48,7 +48,7 @@ class AbletonConnection:
         """Receive the complete response, potentially in multiple chunks"""
         chunks = []
         sock.settimeout(15.0)  # Increased timeout for operations that might take longer
-        
+
         try:
             while True:
                 try:
@@ -57,9 +57,9 @@ class AbletonConnection:
                         if not chunks:
                             raise Exception("Connection closed before receiving any data")
                         break
-                    
+
                     chunks.append(chunk)
-                    
+
                     # Check if we've received a complete JSON object
                     try:
                         data = b''.join(chunks)
@@ -78,7 +78,7 @@ class AbletonConnection:
         except Exception as e:
             logger.error(f"Error during receive: {str(e)}")
             raise
-            
+
         # If we get here, we either timed out or broke out of the loop
         if chunks:
             data = b''.join(chunks)
@@ -95,17 +95,18 @@ class AbletonConnection:
         """Send a command to Ableton and return the response"""
         if not self.sock and not self.connect():
             raise ConnectionError("Not connected to Ableton")
-        
+
         command = {
             "type": command_type,
             "params": params or {}
         }
-        
+
         # Check if this is a state-modifying command
         is_modifying_command = command_type in [
             "create_midi_track", "create_audio_track", "set_track_name",
             "create_clip", "add_notes_to_clip", "set_clip_name",
-            "set_tempo", "fire_clip", "stop_clip", "set_device_parameter",
+            "set_tempo", "set_signature_denominator", "set_signature_numerator",
+            "fire_clip", "stop_clip", "set_device_parameter",
             "start_playback", "stop_playback", "load_instrument_or_effect",
             # Arrangement/transport additions
             "set_record_mode", "continue_playing", "jump_by", "set_back_to_arranger",
@@ -123,40 +124,40 @@ class AbletonConnection:
             "application_view_scroll_view", "application_view_show_view",
             "application_view_toggle_browse", "application_view_zoom_view"
         ]
-        
+
         try:
             logger.info(f"Sending command: {command_type} with params: {params}")
-            
+
             # Send the command
             self.sock.sendall(json.dumps(command).encode('utf-8'))
             logger.info(f"Command sent, waiting for response...")
-            
+
             # For state-modifying commands, add a small delay to give Ableton time to process
             if is_modifying_command:
                 import time
                 time.sleep(0.1)  # 100ms delay
-            
+
             # Set timeout based on command type
             timeout = 15.0 if is_modifying_command else 10.0
             self.sock.settimeout(timeout)
-            
+
             # Receive the response
             response_data = self.receive_full_response(self.sock)
             logger.info(f"Received {len(response_data)} bytes of data")
-            
+
             # Parse the response
             response = json.loads(response_data.decode('utf-8'))
             logger.info(f"Response parsed, status: {response.get('status', 'unknown')}")
-            
+
             if response.get("status") == "error":
                 logger.error(f"Ableton error: {response.get('message')}")
                 raise Exception(response.get("message", "Unknown error from Ableton"))
-            
+
             # For state-modifying commands, add another small delay after receiving response
             if is_modifying_command:
                 import time
                 time.sleep(0.1)  # 100ms delay
-            
+
             return response.get("result", {})
         except socket.timeout:
             logger.error("Socket timeout while waiting for response from Ableton")
@@ -182,14 +183,14 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     """Manage server startup and shutdown lifecycle"""
     try:
         logger.info("AbletonMCP server starting up")
-        
+
         try:
             ableton = get_ableton_connection()
             logger.info("Successfully connected to Ableton on startup")
         except Exception as e:
             logger.warning(f"Could not connect to Ableton on startup: {str(e)}")
             logger.warning("Make sure the Ableton Remote Script is running")
-        
+
         yield {}
     finally:
         global _ableton_connection
@@ -212,7 +213,7 @@ _ableton_connection = None
 def get_ableton_connection():
     """Get or create a persistent Ableton connection"""
     global _ableton_connection
-    
+
     if _ableton_connection is not None:
         try:
             # Test the connection with a simple ping
@@ -228,7 +229,7 @@ def get_ableton_connection():
             except:
                 pass
             _ableton_connection = None
-    
+
     # Connection doesn't exist or is invalid, create a new one
     if _ableton_connection is None:
         # Try to connect up to 3 times with a short delay between attempts
@@ -239,7 +240,7 @@ def get_ableton_connection():
                 _ableton_connection = AbletonConnection(host="localhost", port=9877)
                 if _ableton_connection.connect():
                     logger.info("Created new persistent connection to Ableton")
-                    
+
                     # Validate connection with a simple command
                     try:
                         # Get session info as a test
@@ -258,17 +259,17 @@ def get_ableton_connection():
                 if _ableton_connection:
                     _ableton_connection.disconnect()
                     _ableton_connection = None
-            
+
             # Wait before trying again, but only if we have more attempts left
             if attempt < max_attempts:
                 import time
                 time.sleep(1.0)
-        
+
         # If we get here, all connection attempts failed
         if _ableton_connection is None:
             logger.error("Failed to connect to Ableton after multiple attempts")
             raise Exception("Could not connect to Ableton. Make sure the Remote Script is running.")
-    
+
     return _ableton_connection
 
 
@@ -456,7 +457,7 @@ def press_current_dialog_button(ctx: Context, index: int) -> str:
 def get_track_info(ctx: Context, track_index: int) -> str:
     """
     Get detailed information about a specific track in Ableton.
-    
+
     Parameters:
     - track_index: The index of the track to get information about
     """
@@ -891,7 +892,7 @@ def write_automation(
 def create_midi_track(ctx: Context, index: int = -1) -> str:
     """
     Create a new MIDI track in the Ableton session.
-    
+
     Parameters:
     - index: The index to insert the track at (-1 = end of list)
     """
@@ -924,7 +925,7 @@ def create_audio_track(ctx: Context, index: int = -1) -> str:
 def set_track_name(ctx: Context, track_index: int, name: str) -> str:
     """
     Set the name of a track.
-    
+
     Parameters:
     - track_index: The index of the track to rename
     - name: The new name for the track
@@ -941,7 +942,7 @@ def set_track_name(ctx: Context, track_index: int, name: str) -> str:
 def create_clip(ctx: Context, track_index: int, clip_index: int, length: float = 4.0) -> str:
     """
     Create a new MIDI clip in the specified track and clip slot.
-    
+
     Parameters:
     - track_index: The index of the track to create the clip in
     - clip_index: The index of the clip slot to create the clip in
@@ -950,8 +951,8 @@ def create_clip(ctx: Context, track_index: int, clip_index: int, length: float =
     try:
         ableton = get_ableton_connection()
         result = ableton.send_command("create_clip", {
-            "track_index": track_index, 
-            "clip_index": clip_index, 
+            "track_index": track_index,
+            "clip_index": clip_index,
             "length": length
         })
         return f"Created new clip at track {track_index}, slot {clip_index} with length {length} beats"
@@ -961,14 +962,14 @@ def create_clip(ctx: Context, track_index: int, clip_index: int, length: float =
 
 @mcp.tool()
 def add_notes_to_clip(
-    ctx: Context, 
-    track_index: int, 
-    clip_index: int, 
+    ctx: Context,
+    track_index: int,
+    clip_index: int,
     notes: List[Dict[str, Union[int, float, bool]]]
 ) -> str:
     """
     Add MIDI notes to a clip.
-    
+
     Parameters:
     - track_index: The index of the track containing the clip
     - clip_index: The index of the clip slot containing the clip
@@ -990,7 +991,7 @@ def add_notes_to_clip(
 def set_clip_name(ctx: Context, track_index: int, clip_index: int, name: str) -> str:
     """
     Set the name of a clip.
-    
+
     Parameters:
     - track_index: The index of the track containing the clip
     - clip_index: The index of the clip slot containing the clip
@@ -1032,7 +1033,7 @@ def get_clip_info(ctx: Context, track_index: int, clip_index: int) -> str:
 def set_tempo(ctx: Context, tempo: float) -> str:
     """
     Set the tempo of the Ableton session.
-    
+
     Parameters:
     - tempo: The new tempo in BPM
     """
@@ -1044,12 +1045,43 @@ def set_tempo(ctx: Context, tempo: float) -> str:
         logger.error(f"Error setting tempo: {str(e)}")
         return f"Error setting tempo: {str(e)}"
 
+@mcp.tool()
+def set_signature_denominator(ctx: Context, signature_denominator: int) -> str:
+    """
+    Set the time signature denominator of the song.
+
+    Parameters:
+    - signature_denominator: The new time signature denominator
+    """
+    try:
+        ableton = get_ableton_connection()
+        result = ableton.send_command("set_signature_denominator", {"signature_denominator": signature_denominator})
+        return f"Set signature denominator to {signature_denominator}"
+    except Exception as e:
+        logger.error(f"Error setting signature denominator: {str(e)}")
+        return f"Error setting signature denominator: {str(e)}"
+
+@mcp.tool()
+def set_signature_numerator(ctx: Context, signature_numerator: int) -> str:
+    """
+    Set the time signature numerator of the song.
+
+    Parameters:
+    - signature_numerator: The new time signature numerator
+    """
+    try:
+        ableton = get_ableton_connection()
+        result = ableton.send_command("set_signature_numerator", {"signature_numerator": signature_numerator})
+        return f"Set signature numerator to {signature_numerator}"
+    except Exception as e:
+        logger.error(f"Error setting signature numerator: {str(e)}")
+        return f"Error setting signature numerator: {str(e)}"
 
 @mcp.tool()
 def load_instrument_or_effect(ctx: Context, track_index: int, uri: str) -> str:
     """
     Load an instrument, effect, or audio file from the browser onto a track using its URI.
-    
+
     Parameters:
     - track_index: The index of the track to load the item on.
     - uri: The URI of the browser item to load (e.g., an instrument, audio effect, or an audio file).
@@ -1060,7 +1092,7 @@ def load_instrument_or_effect(ctx: Context, track_index: int, uri: str) -> str:
             "track_index": track_index,
             "item_uri": uri
         })
-        
+
         # Check if the instrument was loaded successfully
         if result.get("loaded", False):
             new_devices = result.get("new_devices", [])
@@ -1079,7 +1111,7 @@ def load_instrument_or_effect(ctx: Context, track_index: int, uri: str) -> str:
 def fire_clip(ctx: Context, track_index: int, clip_index: int) -> str:
     """
     Start playing a clip.
-    
+
     Parameters:
     - track_index: The index of the track containing the clip
     - clip_index: The index of the clip slot containing the clip
@@ -1099,7 +1131,7 @@ def fire_clip(ctx: Context, track_index: int, clip_index: int) -> str:
 def stop_clip(ctx: Context, track_index: int, clip_index: int) -> str:
     """
     Stop playing a clip.
-    
+
     Parameters:
     - track_index: The index of the track containing the clip
     - clip_index: The index of the clip slot containing the clip
@@ -1309,7 +1341,7 @@ def duplicate_track_clip_to_arrangement(
 def get_browser_tree(ctx: Context, category_type: str = "all", max_depth: int = 2) -> str:
     """
     Get a hierarchical tree of browser categories from Ableton, with recursive exploration.
-    
+
     Parameters:
     - category_type: Type of categories to get ('all', 'instruments', 'sounds', 'drums', 'audio_effects', 'midi_effects', 'plugins').
     - max_depth: How many levels of subfolders to explore. Defaults to 2.
@@ -1320,17 +1352,17 @@ def get_browser_tree(ctx: Context, category_type: str = "all", max_depth: int = 
             "category_type": category_type,
             "max_depth": max_depth
         })
-        
+
         # Check if we got any categories
         if "available_categories" in result and len(result.get("categories", [])) == 0:
             available_cats = result.get("available_categories", [])
             return (f"No categories found for '{category_type}'. "
                    f"Available browser categories: {', '.join(available_cats)}")
-        
+
         # Format the tree in a more readable way
         total_folders = result.get("total_folders", 0)
         formatted_output = f"Browser tree for '{category_type}' (showing {total_folders} folders):\n\n"
-        
+
         def format_tree(item, indent=0):
             output = ""
             if item:
@@ -1338,7 +1370,7 @@ def get_browser_tree(ctx: Context, category_type: str = "all", max_depth: int = 
                 name = item.get("name", "Unknown")
                 path = item.get("path", "")
                 has_more = item.get("has_more", False)
-                
+
                 # Add this item
                 output += f"{prefix}• {name}"
                 if path:
@@ -1346,17 +1378,17 @@ def get_browser_tree(ctx: Context, category_type: str = "all", max_depth: int = 
                 if has_more:
                     output += " [...]"
                 output += "\n"
-                
+
                 # Add children
                 for child in item.get("children", []):
                     output += format_tree(child, indent + 1)
             return output
-        
+
         # Format each category
         for category in result.get("categories", []):
             formatted_output += format_tree(category)
             formatted_output += "\n"
-        
+
         return formatted_output
     except Exception as e:
         error_msg = str(e)
@@ -1374,7 +1406,7 @@ def get_browser_tree(ctx: Context, category_type: str = "all", max_depth: int = 
 def get_browser_items_at_path(ctx: Context, path: str) -> str:
     """
     Get browser items at a specific path in Ableton's browser.
-    
+
     Parameters:
     - path: Path in the format "category/folder/subfolder"
             where category is one of the available browser categories in Ableton
@@ -1384,14 +1416,14 @@ def get_browser_items_at_path(ctx: Context, path: str) -> str:
         result = ableton.send_command("get_browser_items_at_path", {
             "path": path
         })
-        
+
         # Check if there was an error with available categories
         if "error" in result and "available_categories" in result:
             error = result.get("error", "")
             available_cats = result.get("available_categories", [])
             return (f"Error: {error}\n"
                    f"Available browser categories: {', '.join(available_cats)}")
-        
+
         return json.dumps(result, indent=2)
     except Exception as e:
         error_msg = str(e)
@@ -1415,7 +1447,7 @@ def get_browser_items_at_path(ctx: Context, path: str) -> str:
 def load_drum_kit(ctx: Context, track_index: int, rack_uri: str, kit_path: str) -> str:
     """
     Load a drum rack and then load a specific drum kit into it.
-    
+
     Parameters:
     - track_index: The index of the track to load on
     - rack_uri: The URI of the drum rack to load (e.g., 'Drums/Drum Rack')
@@ -1423,38 +1455,38 @@ def load_drum_kit(ctx: Context, track_index: int, rack_uri: str, kit_path: str) 
     """
     try:
         ableton = get_ableton_connection()
-        
+
         # Step 1: Load the drum rack
         result = ableton.send_command("load_browser_item", {
             "track_index": track_index,
             "item_uri": rack_uri
         })
-        
+
         if not result.get("loaded", False):
             return f"Failed to load drum rack with URI '{rack_uri}'"
-        
+
         # Step 2: Get the drum kit items at the specified path
         kit_result = ableton.send_command("get_browser_items_at_path", {
             "path": kit_path
         })
-        
+
         if "error" in kit_result:
             return f"Loaded drum rack but failed to find drum kit: {kit_result.get('error')}"
-        
+
         # Step 3: Find a loadable drum kit
         kit_items = kit_result.get("items", [])
         loadable_kits = [item for item in kit_items if item.get("is_loadable", False)]
-        
+
         if not loadable_kits:
             return f"Loaded drum rack but no loadable drum kits found at '{kit_path}'"
-        
+
         # Step 4: Load the first loadable kit
         kit_uri = loadable_kits[0].get("uri")
         load_result = ableton.send_command("load_browser_item", {
             "track_index": track_index,
             "item_uri": kit_uri
         })
-        
+
         return f"Loaded drum rack and kit '{loadable_kits[0].get('name')}' on track {track_index}"
     except Exception as e:
         logger.error(f"Error loading drum kit: {str(e)}")
